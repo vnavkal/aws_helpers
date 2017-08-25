@@ -1,7 +1,36 @@
 import boto3
 
+import aws_helpers.common
+
+
 _CLIENT = boto3.client('iam')
 _SU_CLIENT = boto3.Session(profile_name='su').client('iam')
+
+
+@aws_helpers.common.dangerous
+def create_policy_version(arn, path_to_document):
+    with open(path_to_document) as f:
+        document = f.read()
+    return _SU_CLIENT.create_policy_version(
+        PolicyArn=arn, PolicyDocument=document, SetAsDefault=True
+    )
+
+
+@aws_helpers.common.dangerous
+def delete_policy_version(arn, version_id):
+    return _SU_CLIENT.delete_policy_version(
+        PolicyArn=arn, VersionId=version_id
+    )
+
+
+def update_policy(new_policy_document_path, policy_arn):
+    old_version_id = _get_default_version_id(policy_arn)
+    create_policy_response = create_policy_version(policy_arn, new_policy_document_path)
+    delete_policy_response = delete_policy_version(policy_arn, old_version_id)
+    return {
+        'create_policy_response': create_policy_response,
+        'delete_policy_response': delete_policy_response
+    }
 
 
 def list_users():
@@ -38,10 +67,14 @@ def get_all_policy_statements_for_group(group_name):
 
 
 def get_policy_document(policy_arn):
-    policy_data = _CLIENT.get_policy(PolicyArn=policy_arn)
-    default_version_id = policy_data['Policy']['DefaultVersionId']
+    default_version_id = _get_default_version_id(policy_arn)
     document_data = _CLIENT.get_policy_version(PolicyArn=policy_arn, VersionId=default_version_id)
     return document_data['PolicyVersion']['Document']
+
+
+def _get_default_version_id(policy_arn):
+    policy_data = _CLIENT.get_policy(PolicyArn=policy_arn)
+    return policy_data['Policy']['DefaultVersionId']
 
 
 def get_policy_statement(policy_arn):
